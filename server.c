@@ -34,15 +34,59 @@ void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, 
 
 // TODO: HW3 — Extend getargs() to parse the full argument list.
 
+typedef struct{
+    int connfd; //connector fd
+    struct timeval arrival; //time when accepted by master thread
+} Task;
+
+typedef struct{
+    //circular array for structs - size is set at queue_size
+    Task* tasks;
+    int capacity;
+    int front;
+    int rear;
+    int count;
+
+    pthread_mutex_t lock;
+    pthread_cond_t not_full; //signaled when a slot opens up
+    pthread_cond_t not_empty; //signaled when a task is added
+
+} TaskQueue;
+
+void init_queue(Task* q, int queue_size){
+    q->tasks = malloc(sizeof(Task) * queue_size);
+    q->capacity = queue_size;
+    q->front = 0;
+    queue->rear = 0;
+    queue->count = 0;
+
+    pthread_mutex_init(&q->lock, NULL);
+    pthread_cond_init(&q->not_full, NULL);
+    pthread_cond_init(&q->not_empty, NULL);
+}
+
+//optional
+struct active_queue{
+
+
+}
+
+
+struct worker_pool{
+
+
+};
+
 int main(int argc, char *argv[])
 {
     // Create the global server log
     server_log log = create_log();
 
-    int listenfd, connfd, port, clientlen;
+    int listenfd, connfd, tcp_portnum, udp_portnum, threads, queue_size, clientlen;
+    float debug_sleep_time;
     struct sockaddr_in clientaddr;
 
-    getargs(&port, argc, argv);
+    getargs(&tcp_portnum, &udp_portnum, &threads, &queue_size, &debug_sleep_time argc, argv);
 
     listenfd = Open_listenfd(port);
     while (1) {
