@@ -13,13 +13,18 @@
 //
 
 // Parses command-line arguments
-void getargs(int *port, int argc, char *argv[])
+void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, float* debug_sleep_time, int argc, char *argv[])
 {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+    if (argc < 6) {
+        fprintf(stderr, "Usage: %s <tcp_portnum> <udp_portnum> <threads> <queue_size> <debug_sleep_time>\n", argv[0]);
         exit(1);
     }
-    *port = atoi(argv[1]);
+    *tcp_portnum = atoi(argv[1]);
+    *udp_portnum = atoi(argv[2]);
+    *threads = atoi(argv[3]);
+    *queue_size= atoi(argv[4]);
+    *debug_sleep_time = atof(argv[5]);
+    
 }
 
 // TODO: HW3 — Task 1: Initialize the thread pool and request queue.
