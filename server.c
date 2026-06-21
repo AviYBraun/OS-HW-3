@@ -10,31 +10,9 @@
 // To run:
 //  ./server <portnum (above 2000)>
 //
-// Repeatedly handles HTTP requests sent to this port number.
-// Most of the work is done within routines written in request.c
-//
 
-// Parses command-line arguments
-void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, float* debug_sleep_time, int argc, char *argv[])
-{
-    if (argc < 6) {
-        fprintf(stderr, "Usage: %s <tcp_portnum> <udp_portnum> <threads> <queue_size> <debug_sleep_time>\n", argv[0]);
-        exit(1);
-    }
-    *tcp_portnum = atoi(argv[1]);
-    *udp_portnum = atoi(argv[2]);
-    *threads = atoi(argv[3]);
-    *queue_size= atoi(argv[4]);
-    *debug_sleep_time = atof(argv[5]);
-    
-}
+void* worker_thread_loop(void* arg); //forward declaration
 
-// TODO: HW3 — Task 1: Initialize the thread pool and request queue.
-// This server currently handles all requests in the main thread.
-
-// TODO: HW3 — Task 4: Add the UDP channel (see the UDP_* wrappers in segel.c).
-
-// TODO: HW3 — Extend getargs() to parse the full argument list.
 
 typedef struct{
     int connfd; //connector fd
@@ -55,6 +33,28 @@ typedef struct{
 
 } TaskQueue;
 
+
+global int keep_running = 1;
+TaskQueue shared_queue;
+server_log log;
+
+void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, float* debug_sleep_time, int argc, char *argv[])
+{
+    if (argc < 6) {
+        fprintf(stderr, "Usage: %s <tcp_portnum> <udp_portnum> <threads> <queue_size> <debug_sleep_time>\n", argv[0]);
+        exit(1);
+    }
+    *tcp_portnum = atoi(argv[1]);
+    *udp_portnum = atoi(argv[2]);
+    *threads = atoi(argv[3]);
+    *queue_size= atoi(argv[4]);
+    *debug_sleep_time = atof(argv[5]);
+    
+}
+
+
+
+
 void init_queue(TaskQueue* q, int queue_size){
     q->tasks = malloc(sizeof(Task) * queue_size);
     q->capacity = queue_size;
@@ -69,7 +69,6 @@ void init_queue(TaskQueue* q, int queue_size){
 
 
 
-global int keep_running = 1;
 
 void handle_sigint(int sig){
     keep_running = 0;
@@ -79,7 +78,7 @@ int main(int argc, char *argv[])
 {
     // Create the global server log
     signal(SIGINT, handle_sigint);
-    server_log log = create_log();
+    log = create_log();
 
     int listenfd, connfd, tcp_portnum, udp_portnum, threads, queue_size, clientlen;
     float debug_sleep_time;
@@ -102,7 +101,7 @@ int main(int argc, char *argv[])
         threads_stats_array[i]-> post_req = 0;
         threads_stats_array[i]-> total_req = 0;
 
-        pthread_create(&worker_threads[i], NULL, worker_thread_loop, void*(threads_stats_array[i]));
+        pthread_create(&worker_threads[i], NULL, worker_thread_loop, (void*)(threads_stats_array[i]));
 
     }
 
@@ -114,6 +113,13 @@ int main(int argc, char *argv[])
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd_tcp, (SA *)&clientaddr, (socklen_t*) &clientlen);
 
+        if(!keep_running){ 
+        //in case ctr-C interrupts Accept(), in which case it will return -1, which if we use will cause a crash
+            if(connfd >= 0){
+                Close(connfd);
+                break;
+            }
+        }
         //1) is taskQueue full? if yes - wait on worker_threads to free up tasks 
 
         //2) once taskQueue is notfull, create task, insert in taskqueue, send signals to worker_pool
@@ -126,16 +132,15 @@ int main(int argc, char *argv[])
             pthread_cond_wait(&shared_queue.not_full, &shared_queue.lock);
         }
             //when we wake up, we add the new task to the task list, and signal all of the threads who are waiting
-            Task new_task;
-            new_task.connfd = connfd;
-            gettimeofday(&new_task.arrival, NULL); //track the arrival time for task 3
+        Task new_task;
+        new_task.connfd = connfd;
+        gettimeofday(&new_task.arrival, NULL); //track the arrival time for task 3
             
-            shared_queue.tasks[shared_queue.read] = new_task;
-            shared_queue.rear = shared_queue.rear + 1 % shared_queue.capacity;
-            shared_queue.count++;
+        shared_queue.tasks[shared_queue.read] = new_task;
+        shared_queue.rear = shared_queue.rear + 1 % shared_queue.capacity;
+        shared_queue.count++;
 
-            pthread_cond_signal(&shared_queue.not_empty);
-
+        pthread_cond_signal(&shared_queue.not_empty);
 
         p_thread_mutex_unlock(&shared_queue.lock);
 
@@ -186,10 +191,10 @@ void* worker_thread_loop(void* arg){
 
 
         requestHandle(job.connfd, tm_stats, my_stats, log);
-        shared_queue.front = shared_queue.front + 1 % shared_queue.capacity;
+        Close(job.connfd);
 
         
     }
 
-    return;
+    return NULL;
 }
