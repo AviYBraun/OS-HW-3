@@ -102,41 +102,60 @@ int main(int argc, char *argv[])
 
     }
 
+    //need to figure out how to balance listening on both tcp and udp sockets
+    listenfd_tcp = Open_listenfd(&tcp_portnum); //listen for incoming tasks via TCP protocol
 
-    listenfd = Open_listenfd(port);
     while (1) {
         clientlen = sizeof(clientaddr);
-        connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t*) &clientlen);
+        connfd = Accept(listenfd_tcp, (SA *)&clientaddr, (socklen_t*) &clientlen);
 
-        // TODO: HW3 — Record the request arrival time here.
+        //1) is taskQueue full? if yes - wait on worker_threads to free up tasks 
 
-        // DEMO PURPOSE ONLY:
-        // This is a dummy request handler that immediately processes the
-        // request in the master thread without concurrency. Replace this with
-        // logic that enqueues the connection so a worker thread handles it.
-
-        threads_stats t = malloc(sizeof(struct Threads_stats));
-        t->id = 0;             // Thread ID (placeholder)
-        t->stat_req = 0;       // Static request count
-        t->dynm_req = 0;       // Dynamic request count
-        t->post_req = 0;       // POST request count
-        t->total_req = 0;      // Total request count
+        //2) once taskQueue is notfull, create task, insert in taskqueue, send signals to worker_pool
 
         time_stats dum;
 
         // gettimeofday(&arrival, NULL);
+        pthread_mutex_lock(shared_queue.lock);
+        
+        while(shared_queue.count == shared_queue.capacity){
+            //wait on condition variable
+            pthread_cond_wait(&shared_queue.not_full, &shared_queue.lock);
+        }
+            //when we wake up, we add the new task to the task list, and signal all of the threads who are waiting
+            Task new_task;
+            new_task.connfd = connfd;
+            gettimeofday(&new_task.arrival, NULL); //track the arrival time for task 3
+            
+            shared_queue.tasks[shared_queue.read] = new_task;
+            shared_queue.rear = shared_queue.rear + 1 % shared_queue.capacity;
+            shared_queue.count++;
 
-        // Call the request handler (immediate in master thread — DEMO ONLY)
-        requestHandle(connfd, dum, t, log);
+            pthread_cond_signal(&shared_queue.not_empty);
 
-        free(t); // Cleanup
-        Close(connfd); // Close the connection
+
+        p_thread_mutex_unlock(&shared_queue.lock);
+
+        //requestHandle(connfd, dum, t, log); - this is moved to the worker thread function for them to work on the tasks
+
+        
+        // Close(connfd); // Close the connection - moved to the worker thread function
     }
 
     // Clean up the server log before exiting
     destroy_log(log);
 
-    // TODO: HW3 — Add cleanup code for the thread pool and queue.
+    for (int i = 0; i < threads; i++) {
+        free(thread_stats_array[i]);
+    }
+    free(thread_stats_array);
+    free(worker_threads);
+    free(shared_queue.tasks);
+    
+    pthread_mutex_destroy(&shared_queue.lock);
+    pthread_cond_destroy(&shared_queue.not_full);
+    pthread_cond_destroy(&shared_queue.not_empty);
+
 }
 
 void worker_thread_loop(){
