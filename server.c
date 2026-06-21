@@ -1,6 +1,8 @@
 #include "segel.h"
 #include "request.h"
 #include "log.h"
+#include <signal.h>
+
 
 //
 // server.c: A very, very simple web server
@@ -67,21 +69,23 @@ void init_queue(TaskQueue* q, int queue_size){
 
 
 
-//optional
-struct active_queue{
+global int keep_running = 1;
 
+void handle_sigint(int sig){
+    keep_running = 0;
 }
 
 int main(int argc, char *argv[])
 {
     // Create the global server log
+    signal(SIGINT, handle_sigint);
     server_log log = create_log();
 
     int listenfd, connfd, tcp_portnum, udp_portnum, threads, queue_size, clientlen;
     float debug_sleep_time;
     struct sockaddr_in clientaddr;
 
-    getargs(&tcp_portnum, &udp_portnum, &threads, &queue_size, &debug_sleep_time argc, argv);
+    getargs(&tcp_portnum, &udp_portnum, &threads, &queue_size, &debug_sleep_time, argc, argv);
 
     TaskQueue shared_queue;
     init_queue(&shared_queue, queue_size);
@@ -98,22 +102,21 @@ int main(int argc, char *argv[])
         threads_stats_array[i]-> post_req = 0;
         threads_stats_array[i]-> total_req = 0;
 
-        pthread_create(&threads[i], NULL, worker_thread_loop, threads_stats);
+        pthread_create(&worker_threads[i], NULL, worker_thread_loop, void*(threads_stats_array[i]));
 
     }
 
     //need to figure out how to balance listening on both tcp and udp sockets
     listenfd_tcp = Open_listenfd(&tcp_portnum); //listen for incoming tasks via TCP protocol
+    listenfd_udp = Open_listenfd(&udp_portnum);
 
-    while (1) {
+    while (keep_running) {
         clientlen = sizeof(clientaddr);
         connfd = Accept(listenfd_tcp, (SA *)&clientaddr, (socklen_t*) &clientlen);
 
         //1) is taskQueue full? if yes - wait on worker_threads to free up tasks 
 
         //2) once taskQueue is notfull, create task, insert in taskqueue, send signals to worker_pool
-
-        time_stats dum;
 
         // gettimeofday(&arrival, NULL);
         pthread_mutex_lock(shared_queue.lock);
@@ -156,11 +159,37 @@ int main(int argc, char *argv[])
     pthread_cond_destroy(&shared_queue.not_full);
     pthread_cond_destroy(&shared_queue.not_empty);
 
+    return 0;
+
 }
 
-void worker_thread_loop(){
+void* worker_thread_loop(void* arg){
     //while loop of going to sleep, waiting for non-empty queue to call it, and performing tasks
+    threads_stats my_stats = (threads_stats)(arg);
+    while(1){
+        pthread_mutex_lock(&shared_queue.lock);
 
+        while(shared_queue.count == 0){
+            pthread_cond_wait(&shared_queue.not_empty, &shared_queue.lock);
+        }
+
+        Task job = shared_queue.tasks[shared_queue.front];
+        shared_queue.front = (shared_queue.front + 1) % shared_queue.capacity;
+        shared_queue.count --;
+
+        pthread_cond_signal(&shared_queue.not_full); //since we took a task, we can wakeup master thread if it was waiting on a full queue
+        pthread_mutex_unlock(&shared_queue.lock); //unlock before beginning to work on task, else we block out other threads
+
+        time_stats tm_stats;
+        tm_stats.task_arrival = job.arrival;
+        gettimeofday(&tm_stats.task_dispatch, NULL);
+
+
+        requestHandle(job.connfd, tm_stats, my_stats, log);
+        shared_queue.front = shared_queue.front + 1 % shared_queue.capacity;
+
+        
+    }
 
     return;
 }
