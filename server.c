@@ -41,7 +41,7 @@ typedef struct{
 
 typedef struct{
     //circular array for structs - size is set at queue_size
-    Task* tasks;
+    Task* tasks; //the array
     int capacity;
     int front;
     int rear;
@@ -53,7 +53,7 @@ typedef struct{
 
 } TaskQueue;
 
-void init_queue(Task* q, int queue_size){
+void init_queue(TaskQueue* q, int queue_size){
     q->tasks = malloc(sizeof(Task) * queue_size);
     q->capacity = queue_size;
     q->front = 0;
@@ -65,17 +65,12 @@ void init_queue(Task* q, int queue_size){
     pthread_cond_init(&q->not_empty, NULL);
 }
 
+
+
 //optional
 struct active_queue{
 
-
 }
-
-
-struct worker_pool{
-
-
-};
 
 int main(int argc, char *argv[])
 {
@@ -87,6 +82,26 @@ int main(int argc, char *argv[])
     struct sockaddr_in clientaddr;
 
     getargs(&tcp_portnum, &udp_portnum, &threads, &queue_size, &debug_sleep_time argc, argv);
+
+    TaskQueue shared_queue;
+    init_queue(&shared_queue, queue_size);
+
+    //CREATE WORKER THREAD POOL
+    pthread_t *worker_threads = malloc(sizeof(pthread_t)*threads);
+    threads_stats *thread_stats_array = malloc(sizeof(struct Threads_stats) * threads);
+
+    for(int i = 0; i < threads; i++){
+        threads_stats_array[i] = malloc(sizeof(struct Threads_stats));
+        threads_stats_array[i]-> id = i + 1;
+        threads_stats_array[i]-> stat_req = 0;
+        threads_stats_array[i]-> dynm_req = 0;
+        threads_stats_array[i]-> post_req = 0;
+        threads_stats_array[i]-> total_req = 0;
+
+        pthread_create(&threads[i], NULL, worker_thread_loop, threads_stats);
+
+    }
+
 
     listenfd = Open_listenfd(port);
     while (1) {
@@ -122,4 +137,11 @@ int main(int argc, char *argv[])
     destroy_log(log);
 
     // TODO: HW3 — Add cleanup code for the thread pool and queue.
+}
+
+void worker_thread_loop(){
+    //while loop of going to sleep, waiting for non-empty queue to call it, and performing tasks
+
+
+    return;
 }
