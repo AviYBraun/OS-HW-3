@@ -105,8 +105,8 @@ int main(int argc, char *argv[])
     }
 
     //need to figure out how to balance listening on both tcp and udp sockets
-    listenfd_tcp = Open_listenfd(&tcp_portnum); //listen for incoming tasks via TCP protocol
-    listenfd_udp = Open_listenfd(&udp_portnum);
+    listenfd_tcp = Open_listenfd(tcp_portnum); //listen for incoming tasks via TCP protocol
+    listenfd_udp = Open_listenfd(udp_portnum);
 
     while (keep_running) {
         clientlen = sizeof(clientaddr);
