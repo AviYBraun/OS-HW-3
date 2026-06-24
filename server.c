@@ -34,7 +34,7 @@ typedef struct{
 } TaskQueue;
 
 
-global int keep_running = 1;
+volatile int keep_running = 1;
 TaskQueue shared_queue;
 server_log log;
 
@@ -59,8 +59,8 @@ void init_queue(TaskQueue* q, int queue_size){
     q->tasks = malloc(sizeof(Task) * queue_size);
     q->capacity = queue_size;
     q->front = 0;
-    queue->rear = 0;
-    queue->count = 0;
+    q>rear = 0;
+    q>count = 0;
 
     pthread_mutex_init(&q->lock, NULL);
     pthread_cond_init(&q->not_full, NULL);
@@ -86,7 +86,6 @@ int main(int argc, char *argv[])
 
     getargs(&tcp_portnum, &udp_portnum, &threads, &queue_size, &debug_sleep_time, argc, argv);
 
-    TaskQueue shared_queue;
     init_queue(&shared_queue, queue_size);
 
     //CREATE WORKER THREAD POOL
@@ -125,7 +124,7 @@ int main(int argc, char *argv[])
         //2) once taskQueue is notfull, create task, insert in taskqueue, send signals to worker_pool
 
         // gettimeofday(&arrival, NULL);
-        pthread_mutex_lock(shared_queue.lock);
+        pthread_mutex_lock(&shared_queue.lock);
         
         while(shared_queue.count == shared_queue.capacity){
             //wait on condition variable
@@ -136,18 +135,15 @@ int main(int argc, char *argv[])
         new_task.connfd = connfd;
         gettimeofday(&new_task.arrival, NULL); //track the arrival time for task 3
             
-        shared_queue.tasks[shared_queue.read] = new_task;
-        shared_queue.rear = shared_queue.rear + 1 % shared_queue.capacity;
+        shared_queue.tasks[shared_queue.rear] = new_task;
+        shared_queue.rear = (shared_queue.rear + 1) % shared_queue.capacity;
         shared_queue.count++;
 
         pthread_cond_signal(&shared_queue.not_empty);
 
-        p_thread_mutex_unlock(&shared_queue.lock);
-
-        //requestHandle(connfd, dum, t, log); - this is moved to the worker thread function for them to work on the tasks
+        pthread_mutex_unlock(&shared_queue.lock);
 
         
-        // Close(connfd); // Close the connection - moved to the worker thread function
     }
 
     // Clean up the server log before exiting
