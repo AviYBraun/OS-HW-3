@@ -36,6 +36,10 @@ server_log create_log() {
     l->active_writers = 0;
     l->waiting_writers = 0;
 
+    cond_init(&read_allowed, NULL);
+    cond_init(&write_allowed, NULL);
+    mutex_init(lock, NULL);
+
     return l;
 
 }
@@ -54,20 +58,66 @@ void destroy_log(server_log log) {
 
 // Returns dummy log content as string (stub)
 int get_log(server_log log, char** dst) {
-    // TODO: Return the full contents of the log as a dynamically allocated string
-    // This function should handle concurrent access
-
-    const char* dummy = "Log is not implemented.\n";
-    int len = strlen(dummy);
-    *dst = (char*)malloc(len + 1); // Allocate for caller
-    if (*dst != NULL) {
-        strcpy(*dst, dummy);
+    pthread_mutex_lock(&log->lock);
+    while(active_writers > 0 || waiting_writers > 0){
+        cond_wait(&read_allowed, &log->lock);
     }
+    readers_inside++;
+    pthread_mutex_unlock(&log->lock);
+    int len = log->current_len;
+    *dst = (char*)malloc(len + 1);
+    if(*dst != NULL){
+        memcpy(*dst, log->log_data, len);
+        *dst[len = '\0'];
+    } else {
+        len = -1;
+    }
+    pthread_mutex_lock(&log->lock);
+    active_readers--;
+    if(active_readers == 0 && log->waiting_writers > 0){
+        pthread_cond_signal(&log->write_allowed); //wake up waiting writers only if everyone has finished reading
+    }
+    pthread_mutex_unlock(&log->lock);
+
     return len;
-}
+
+    }
+    
 
 // Appends a new entry to the log (no-op stub)
 void add_to_log(server_log log, const char* data, int data_len) {
-    // TODO: Append the provided data to the log
-    // This function should handle concurrent access
-}
+    if(!log || !data || data_len <= 0){return;}
+
+    pthread_mutex_lock(&log->lock);
+    log->waiting_writers++;
+
+    while(log->active_readers > 0 || log->active_writers > 0){
+        pthread_cond_wait(log->write_allowed);
+    }
+    log->waiting_writers--;
+    log->active_writers = 1;
+
+    //add to the dynamic buffer if we need to
+    while(log->current_len + data_len >= log->max_capacity){
+        log->max_capacity *= 2;
+        log->log_data = (char*)realloc(log->log_data, log->max_capacity);
+        if(!log->log_data){
+            perror("add_to_lock: realloc failed");
+            exit(1);
+        }
+    }
+    memcpy(log->log_data + log->current_len, data, data_len);
+    log->current_len += data_len;
+    log->log_data += "\0";
+
+    log->active_writers = 0;
+    if(waiting_writers > 1){
+        pthread_cond_signal(&log->write_allowed);
+    } else {
+        //broadcast to ALL writers, not just one with signal
+        pthread_cond_broadcast(&log->read_allowed);
+        }
+    pthread_mutex_unlock(&log->lock);
+    }
+    
+
