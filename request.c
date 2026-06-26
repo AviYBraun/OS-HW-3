@@ -148,6 +148,8 @@ void requestHandle(int fd, time_stats tm_stats, threads_stats t_stats, server_lo
     int body_len = 0;
     char resp_headers[MAXBUF];
 
+    t_stats->total_req++;
+
     Rio_readinitb(&rio, fd);
     Rio_readlineb(&rio, buf, MAXLINE);
     sscanf(buf, "%s %s %s", method, uri, version);
@@ -166,6 +168,7 @@ void requestHandle(int fd, time_stats tm_stats, threads_stats t_stats, server_lo
                 requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not read this file", tm_stats, t_stats);
                 return;
             }
+            t_stats->stat_req++;
             requestGetFiletype(filename, filetype);
             body_len = sbuf.st_size;
             body_content = requestPrepareStatic(filename, body_len);
@@ -180,12 +183,19 @@ void requestHandle(int fd, time_stats tm_stats, threads_stats t_stats, server_lo
                 requestError(fd, filename, "403", "Forbidden", "OS-HW3 Server could not run this CGI program", tm_stats, t_stats);
                 return;
             }
+            t_stats->dynm_req++;
             body_content = requestPrepareDynamic(filename, cgiargs, &body_len);
 
             sprintf(resp_headers, "HTTP/1.0 200 OK\r\n");
             sprintf(resp_headers + strlen(resp_headers), "Server: OS-HW3 Web Server\r\n");
         }
+
+        // GET is a writer: append an entry (thread + job stats) to the book.
+        char log_entry[MAXLINE] = "";
+        int entry_length = append_stats(log_entry, t_stats, tm_stats);
+        add_to_log(log, log_entry, entry_length);
     } else if (strcasecmp(method, "POST") == 0) {
+        t_stats->post_req++;
         body_len = get_log(log, (char**)&body_content);
 
         sprintf(resp_headers, "HTTP/1.0 200 OK\r\n");

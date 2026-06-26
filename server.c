@@ -36,7 +36,7 @@ typedef struct{
 
 volatile int keep_running = 1;
 TaskQueue shared_queue;
-server_log log;
+server_log server_log_global;
 
 void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, float* debug_sleep_time, int argc, char *argv[])
 {
@@ -59,8 +59,8 @@ void init_queue(TaskQueue* q, int queue_size){
     q->tasks = malloc(sizeof(Task) * queue_size);
     q->capacity = queue_size;
     q->front = 0;
-    q>rear = 0;
-    q>count = 0;
+    q->rear = 0;
+    q->count = 0;
 
     pthread_mutex_init(&q->lock, NULL);
     pthread_cond_init(&q->not_full, NULL);
@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 {
     // Create the global server log
     signal(SIGINT, handle_sigint);
-    log = create_log();
+    server_log_global = create_log();
 
     int listenfd, connfd, tcp_portnum, udp_portnum, threads, queue_size, clientlen;
     float debug_sleep_time;
@@ -93,24 +93,25 @@ int main(int argc, char *argv[])
     threads_stats *thread_stats_array = malloc(sizeof(struct Threads_stats) * threads);
 
     for(int i = 0; i < threads; i++){
-        threads_stats_array[i] = malloc(sizeof(struct Threads_stats));
-        threads_stats_array[i]-> id = i + 1;
-        threads_stats_array[i]-> stat_req = 0;
-        threads_stats_array[i]-> dynm_req = 0;
-        threads_stats_array[i]-> post_req = 0;
-        threads_stats_array[i]-> total_req = 0;
+        thread_stats_array[i] = malloc(sizeof(struct Threads_stats));
+        thread_stats_array[i]-> id = i + 1;
+        thread_stats_array[i]-> stat_req = 0;
+        thread_stats_array[i]-> dynm_req = 0;
+        thread_stats_array[i]-> post_req = 0;
+        thread_stats_array[i]-> total_req = 0;
 
-        pthread_create(&worker_threads[i], NULL, worker_thread_loop, (void*)(threads_stats_array[i]));
+        pthread_create(&worker_threads[i], NULL, worker_thread_loop, (void*)(thread_stats_array[i]));
 
     }
 
     //need to figure out how to balance listening on both tcp and udp sockets
-    listenfd_tcp = Open_listenfd(tcp_portnum); //listen for incoming tasks via TCP protocol
-    listenfd_udp = Open_listenfd(udp_portnum);
+    listenfd = Open_listenfd(tcp_portnum); //listen for incoming tasks via TCP protocol
+    // UDP listener deferred to Task 4
+    // listenfd_udp = UDP_Open(udp_portnum);
 
     while (keep_running) {
         clientlen = sizeof(clientaddr);
-        connfd = Accept(listenfd_tcp, (SA *)&clientaddr, (socklen_t*) &clientlen);
+        connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t*) &clientlen);
 
         if(!keep_running){ 
         //in case ctr-C interrupts Accept(), in which case it will return -1, which if we use will cause a crash
@@ -145,9 +146,15 @@ int main(int argc, char *argv[])
 
         
     }
+    pthread_mutex_lock(&shared_queue.lock);
+    pthread_cond_broadcast(&shared_queue.not_empty);
+    pthread_mutex_unlock(&shared_queue.lock);
 
+    for (int i =0; i<threads; i++){
+        pthread_join(worker_threads[i],NULL);
+    }
     // Clean up the server log before exiting
-    destroy_log(log);
+    destroy_log(server_log_global);
 
     for (int i = 0; i < threads; i++) {
         free(thread_stats_array[i]);
@@ -170,8 +177,12 @@ void* worker_thread_loop(void* arg){
     while(1){
         pthread_mutex_lock(&shared_queue.lock);
 
-        while(shared_queue.count == 0){
+        while(shared_queue.count == 0 && keep_running){
             pthread_cond_wait(&shared_queue.not_empty, &shared_queue.lock);
+        }
+        if (!keep_running && shared_queue.count == 0){
+            pthread_mutex_unlock(&shared_queue.lock);
+            return NULL;
         }
 
         Task job = shared_queue.tasks[shared_queue.front];
@@ -181,12 +192,12 @@ void* worker_thread_loop(void* arg){
         pthread_cond_signal(&shared_queue.not_full); //since we took a task, we can wakeup master thread if it was waiting on a full queue
         pthread_mutex_unlock(&shared_queue.lock); //unlock before beginning to work on task, else we block out other threads
 
-        time_stats tm_stats;
+        time_stats tm_stats = {0};
         tm_stats.task_arrival = job.arrival;
         gettimeofday(&tm_stats.task_dispatch, NULL);
 
 
-        requestHandle(job.connfd, tm_stats, my_stats, log);
+        requestHandle(job.connfd, tm_stats, my_stats, server_log_global);
         Close(job.connfd);
 
         

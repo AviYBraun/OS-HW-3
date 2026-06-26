@@ -1,123 +1,128 @@
 #include <stdlib.h>
 #include <string.h>
 #include "log.h"
-
+#include "WRLocks.h"
+#include <unistd.h>
 // Opaque struct definition
+
+struct LogNode{
+    const char * data;
+    int data_len;
+    struct LogNode *next;
+    struct LogNode *prev;
+};
+
 struct Server_Log {
     // TODO: Implement internal log storage (e.g., dynamic buffer, linked list, etc.)
-    char* log_data;
-    int current_len;
-    int max_capacity;
-
-    int active_readers;
-    int active_writers;
-    int waiting_writers;
-
-    pthread_mutex_t lock;
-    pthread_cond_t read_allowed;
-    pthread_t write_allowed;
-
+    struct LogNode* head;
+    struct LogNode* tail;
 };
+
+void Server_Log_Init(server_log log) {
+    log->head = NULL;
+    log->tail = NULL;
+}
 
 // Creates a new server log instance (stub)
 server_log create_log() {
     // TODO: Allocate and initialize internal log structure
-    server_log l = (server_log)malloc(sizeof(struct Server_Log));
-    if(!l){return NULL;}
-
-    l->max_capacity = 4096;
-    l->current_len = 0;
-    l->log_data = (char*)malloc(l->max_capacity);
-    if(l->log_data){
-        l->log_data[0] = '\0';
+    server_log log = (server_log)malloc(sizeof(struct Server_Log));
+    if(!log){
+        app_error("error: Bad Allocation");
     }
-
-    l->active_readers = 0;
-    l->active_writers = 0;
-    l->waiting_writers = 0;
-
-    cond_init(&read_allowed, NULL);
-    cond_init(&write_allowed, NULL);
-    mutex_init(lock, NULL);
-
-    return l;
-
+    Server_Log_Init(log);
+    readers_writers_init();
+    return log;
 }
 
-// Destroys and frees the log (stub)
+// Destroys and frees the log
 void destroy_log(server_log log) {
-    // TODO: Free all internal resources used by the log
-    if(!log){return;}
+    if (!log) return;
 
-    free(log_data);
-    pthread_mutex_destroy(&log->lock);
-    pthread_mutex_destroy(&log->read_allowed);
-    pthread_mutex_destroy(&log->write_allowed);
+    struct LogNode *current = log->head;
+    while (current) {
+        struct LogNode* temp = current;
+        current = current->next;
+        if (temp->data) {
+            free((void*)temp->data);
+        }
+        free(temp);
+    }
     free(log);
 }
 
-// Returns dummy log content as string (stub)
+//returns the content of the log
 int get_log(server_log log, char** dst) {
-    pthread_mutex_lock(&log->lock);
-    while(active_writers > 0 || waiting_writers > 0){
-        cond_wait(&read_allowed, &log->lock);
-    }
-    readers_inside++;
-    pthread_mutex_unlock(&log->lock);
-    int len = log->current_len;
-    *dst = (char*)malloc(len + 1);
-    if(*dst != NULL){
-        memcpy(*dst, log->log_data, len);
-        *dst[len = '\0'];
-    } else {
-        len = -1;
-    }
-    pthread_mutex_lock(&log->lock);
-    active_readers--;
-    if(active_readers == 0 && log->waiting_writers > 0){
-        pthread_cond_signal(&log->write_allowed); //wake up waiting writers only if everyone has finished reading
-    }
-    pthread_mutex_unlock(&log->lock);
 
-    return len;
+    reader_lock();
+    int len = 1;
+    struct LogNode *current = log->head;
 
+    //count log size
+    while (current){
+        len += current->data_len + 1;
+        current = current->next;
     }
-    
 
-// Appends a new entry to the log (no-op stub)
+    char *result = malloc(len);
+    if (!result) {
+        reader_unlock();
+        app_error("error: Bad Allocation");
+    }
+
+    //copy the log content into the result string as efficiently as possible
+    char *write_pos = result;
+    current = log->head;
+    while (current) {
+        memcpy(write_pos, current->data, current->data_len);
+        write_pos += current->data_len;
+
+        *write_pos = '#';
+        write_pos++;
+
+        current = current->next;
+    }
+
+    *write_pos = '\0';
+    *dst = result;
+    reader_unlock();
+    //return number of chars in the log - not including NULL termination
+    return len - 1;
+
+}
+
+// Appends a new entry to the log
 void add_to_log(server_log log, const char* data, int data_len) {
-    if(!log || !data || data_len <= 0){return;}
 
-    pthread_mutex_lock(&log->lock);
-    log->waiting_writers++;
-
-    while(log->active_readers > 0 || log->active_writers > 0){
-        pthread_cond_wait(log->write_allowed);
+    // This function should handle concurrent access
+    // writer_lock(); - this lock was moved down since this is not a critical section
+    // creating logEntry
+    struct LogNode *newLog = malloc(sizeof(struct LogNode));
+    if (!newLog){
+        app_error("error: Bad Allocation");
     }
-    log->waiting_writers--;
-    log->active_writers = 1;
-
-    //add to the dynamic buffer if we need to
-    while(log->current_len + data_len >= log->max_capacity){
-        log->max_capacity *= 2;
-        log->log_data = (char*)realloc(log->log_data, log->max_capacity);
-        if(!log->log_data){
-            perror("add_to_lock: realloc failed");
-            exit(1);
-        }
+    char *data_copy = malloc(data_len + 1);
+    if (!data_copy){
+        app_error("error: Bad Allocation");
     }
-    memcpy(log->log_data + log->current_len, data, data_len);
-    log->current_len += data_len;
-    log->log_data += "\0";
 
-    log->active_writers = 0;
-    if(waiting_writers > 1){
-        pthread_cond_signal(&log->write_allowed);
+    memcpy(data_copy, data, data_len);
+    data_copy[data_len] = '\0';
+    newLog->data = data_copy;
+    newLog->data_len = data_len;
+    newLog->next = NULL;
+
+    // critical section of changing the shared log
+    // pushing entry to end of the log
+    writer_lock();
+    if(log->tail) {
+        log->tail->next = newLog;
+        newLog->prev = log->tail;
     } else {
-        //broadcast to ALL writers, not just one with signal
-        pthread_cond_broadcast(&log->read_allowed);
-        }
-    pthread_mutex_unlock(&log->lock);
+        log->head = newLog;
+        newLog->prev = NULL;
     }
-    
-
+    usleep(200000); // set this to 0.2 seconds (in microseconds)
+    log->tail = newLog;
+    writer_unlock();
+}
