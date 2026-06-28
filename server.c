@@ -2,6 +2,8 @@
 #include "request.h"
 #include "log.h"
 #include <signal.h>
+#include <sys/select.h>
+#include <fcntl.h>
 
 
 //
@@ -33,9 +35,23 @@ typedef struct{
 
 } TaskQueue;
 
+typedef struct PingNode {
+    struct sockaddr_in addr;
+    struct PingNode* next;
+} PingNode;
+
+typedef struct {
+    PingNode* head;
+    PingNode* tail;
+    int count;
+} PingQueue;
+
 
 volatile int keep_running = 1;
 TaskQueue shared_queue;
+PingQueue* thread_pings; 
+int udp_fd;
+int notify_pipe[2];
 server_log server_log_global;
 
 void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, float* debug_sleep_time, int argc, char *argv[])
@@ -103,11 +119,17 @@ int main(int argc, char *argv[])
         pthread_create(&worker_threads[i], NULL, worker_thread_loop, (void*)(thread_stats_array[i]));
 
     }
-
+    thread_pings = malloc(sizeof(PingQueue)*threads);
+    for(int i = 0; i < threads; i++){
+        thread_pings[i].head = thread_pings[i].tail = NULL;
+        thread_pings[i].count = 0;
+    }
     //need to figure out how to balance listening on both tcp and udp sockets
     listenfd = Open_listenfd(tcp_portnum); //listen for incoming tasks via TCP protocol
-    // UDP listener deferred to Task 4
-    // listenfd_udp = UDP_Open(udp_portnum);
+    udp_fd = UDP_Open(udp_portnum);
+    pipe(notify_pipe);
+    fcntl(notify_pipe[0], F_SETFL, O_NONBLOCK);
+    fcntl(notify_pipe[1], F_SETFL, O_NONBLOCK);
 
     while (keep_running) {
         clientlen = sizeof(clientaddr);
@@ -162,7 +184,11 @@ int main(int argc, char *argv[])
     free(thread_stats_array);
     free(worker_threads);
     free(shared_queue.tasks);
-    
+    Close(udp_fd);
+    close(notify_pipe[0]);
+    close(notify_pipe[1]);
+    free(thread_pings);
+        
     pthread_mutex_destroy(&shared_queue.lock);
     pthread_cond_destroy(&shared_queue.not_full);
     pthread_cond_destroy(&shared_queue.not_empty);

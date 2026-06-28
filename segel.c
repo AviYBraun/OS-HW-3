@@ -572,13 +572,50 @@ int Open_listenfd(int port)
 /* $begin udp_open */
 int UDP_Open(int port)
 {
-//TODO
+int listenfd, optval=1;
+    struct sockaddr_in serveraddr;
+  
+    /* Create a socket descriptor */
+    if ((listenfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+      fprintf(stderr, "socket failed\n");
+      return -1;
+    }
+ 
+    /* Eliminates "Address already in use" error from bind. */
+    if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, 
+                   (const void *)&optval , sizeof(int)) < 0) {
+      fprintf(stderr, "setsockopt failed\n");
+      return -1;
+    }
+
+    /* Listenfd will be an endpoint for all requests to port
+       on any IP address for this host */
+    bzero((char *) &serveraddr, sizeof(serveraddr));
+    serveraddr.sin_family = AF_INET; 
+    serveraddr.sin_addr.s_addr = htonl(INADDR_ANY); 
+    serveraddr.sin_port = htons((unsigned short)port); 
+    if (bind(listenfd, (SA *)&serveraddr, sizeof(serveraddr)) < 0) {
+      fprintf(stderr, "bind failed\n");
+      return -1;
+    }
+
+    return listenfd;
+
 }
 /* $end udp_open */
 
 int UDP_FillSockAddr(struct sockaddr_in *addr, char *hostname, int port)
 {
 //TODO
+bzero(addr,sizeof(*addr));
+addr->sin_family = AF_INET;
+addr->sin_port = htons((unsigned short)port);
+struct hostent *he = gethostbyname(hostname);
+if(!he){
+    return - 1;
+}
+memcpy(&addr->sin_addr,he->h_addr_list[0],he->h_length);
+return 0;
 }
 
 int UDP_Write(int sd, struct sockaddr_in *addr, char *buffer, int n)
