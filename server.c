@@ -14,6 +14,7 @@
 //
 
 void* worker_thread_loop(void* arg); //forward declaration
+float global_debug_sleep_time = 0.0; //make global so that logging function can access it
 
 
 typedef struct{
@@ -65,6 +66,7 @@ void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, 
     *threads = atoi(argv[3]);
     *queue_size= atoi(argv[4]);
     *debug_sleep_time = atof(argv[5]);
+    global_debug_sleep_time = *debug_sleep_time;
     
 }
 
