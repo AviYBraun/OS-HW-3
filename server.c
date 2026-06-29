@@ -157,13 +157,13 @@ int main(int argc, char *argv[])
 
             int bytes_read = UDP_Read(udp_fd, &client_udp_addr, buffer, MAXBUF);
             if(bytes_read > 0){
-                buffer[bytes_read] = "\0";
+                buffer[bytes_read] = '\0';
 
                 int target_thread_id = atoi(buffer);
 
                 int thread_idx = target_thread_id - 1;
                 if(thread_idx >= 0 && thread_idx < threads){
-                    PingNode* new_ping = maclloc(sizeof(PingNode));
+                    PingNode* new_ping = malloc(sizeof(PingNode));
                     if(new_ping){
                         new_ping->addr = client_udp_addr;
                         new_ping->next = NULL;
@@ -174,7 +174,7 @@ int main(int argc, char *argv[])
                         } else {
                             thread_pings[thread_idx].head = new_ping;
                         }
-                        thread_pings[thead_idx].tail = new_ping;
+                        thread_pings[thread_idx].tail = new_ping;
                         thread_pings[thread_idx].count++;
                         pthread_cond_broadcast(&shared_queue.not_empty);
                         
@@ -210,7 +210,7 @@ int main(int argc, char *argv[])
                 //when we wake up, we add the new task to the task list, and signal all of the threads who are waiting
             if(!keep_running){
                 pthread_mutex_unlock(&shared_queue.lock);
-                if(conffd >= 0){Close(connfd);}
+                if(connffd >= 0){Close(connfd);}
                 break;
             }
             Task new_task;
@@ -262,18 +262,18 @@ void* worker_thread_loop(void* arg){
     //while loop of going to sleep, waiting for non-empty queue to call it, and performing tasks
     threads_stats my_stats = (threads_stats)(arg);
     char udp_send_buf[MAXBUF];
+    int my_idx = my_stats->id - 1;
     while(1){
         pthread_mutex_lock(&shared_queue.lock);
         //first handle all UDP requests
-        while(thread_pings[my_stats->id - 1].head!=NULL){
+        while(thread_pings[my_idx].head!=NULL){
             PingNode* ping_job = thread_pings[my_stats->id - 1].head;
-            thread_pings[my_stats->id - 1].head = ping_job->next;
-            if(thread_pings[my_stats->id - 1].head == NULL){
-                thread_pings[my_stats->id - 1].tail == NULL;
+            thread_pings[my_idx].head = ping_job->next;
+            if(thread_pings[my_idx].head == NULL){
+                thread_pings[my_idx].tail == NULL;
             }
-            thread_pings[my_stats->id].count--;
-        }
-        pthread_mutex_lock(&shared_queue.lock);
+            thread_pings[my_idx].count--;
+        pthread_mutex_unlock(&shared_queue.lock);
 
         memset(udp_send_buf, 0, MAXBUF);
         sprintf(udp_send_buf, "Stat-Thread-Id:: %d\r\n", my_stats->id);
@@ -286,6 +286,7 @@ void* worker_thread_loop(void* arg){
         free(ping_job);
         pthread_mutex_lock(&shared_queue.lock);
 
+        }
 
         while(shared_queue.count == 0 && thread_pings[my_stats->id - 1].head == NULL && keep_running){
             pthread_cond_wait(&shared_queue.not_empty, &shared_queue.lock);

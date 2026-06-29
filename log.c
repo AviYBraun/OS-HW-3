@@ -102,8 +102,6 @@ int get_log(server_log log, char** dst, time_stats* tm_stats) {
 // Appends a new entry to the log
 void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_stats) {
 
-    // This function should handle concurrent access
-    // writer_lock(); - this lock was moved down since this is not a critical section
     // creating logEntry
     struct LogNode *newLog = malloc(sizeof(struct LogNode));
     if (!newLog){
@@ -120,8 +118,8 @@ void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_s
     newLog->data_len = data_len;
     newLog->next = NULL;
 
-    //stat-log-arrival recorded before requesting locl
-    gettimeofday(&(tm_stats->log_enter), NULL);
+    //stat-log-arrival recorded before requesting lock
+    gettimeofday(&(tm_stats->log_enter_time), NULL);
     // critical section of changing the shared log
     // pushing entry to end of the log
     writer_lock();
