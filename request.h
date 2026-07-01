@@ -11,12 +11,6 @@ typedef struct Threads_stats {
     int total_req;    // Total number of requests handled
 } * threads_stats;
 
-typedef struct Time_stats {
-    struct timeval task_arrival;
-    struct timeval task_dispatch;
-    struct timeval log_enter;
-    struct timeval log_exit;
-} time_stats;
 // Handles a client request.
 // - fd: the connection socket
 // - arrival: time the request arrived

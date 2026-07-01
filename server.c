@@ -2,7 +2,6 @@
 #include "request.h"
 #include "log.h"
 #include <signal.h>
-#include <sys/select.h>
 #include <fcntl.h>
 
 
@@ -110,6 +109,13 @@ int main(int argc, char *argv[])
     pthread_t *worker_threads = malloc(sizeof(pthread_t)*threads);
     threads_stats *thread_stats_array = malloc(sizeof(struct Threads_stats) * threads);
 
+    // Allocate per-thread ping queues BEFORE starting workers (they read it immediately)
+    thread_pings = malloc(sizeof(PingQueue)*threads);
+    for(int i = 0; i < threads; i++){
+        thread_pings[i].head = thread_pings[i].tail = NULL;
+        thread_pings[i].count = 0;
+    }
+
     for(int i = 0; i < threads; i++){
         thread_stats_array[i] = malloc(sizeof(struct Threads_stats));
         thread_stats_array[i]-> id = i + 1;
@@ -120,11 +126,6 @@ int main(int argc, char *argv[])
 
         pthread_create(&worker_threads[i], NULL, worker_thread_loop, (void*)(thread_stats_array[i]));
 
-    }
-    thread_pings = malloc(sizeof(PingQueue)*threads);
-    for(int i = 0; i < threads; i++){
-        thread_pings[i].head = thread_pings[i].tail = NULL;
-        thread_pings[i].count = 0;
     }
     //need to figure out how to balance listening on both tcp and udp sockets
     listenfd = Open_listenfd(tcp_portnum); //listen for incoming tasks via TCP protocol
@@ -210,7 +211,7 @@ int main(int argc, char *argv[])
                 //when we wake up, we add the new task to the task list, and signal all of the threads who are waiting
             if(!keep_running){
                 pthread_mutex_unlock(&shared_queue.lock);
-                if(connffd >= 0){Close(connfd);}
+                if(connfd >= 0){Close(connfd);}
                 break;
             }
             Task new_task;
@@ -270,7 +271,7 @@ void* worker_thread_loop(void* arg){
             PingNode* ping_job = thread_pings[my_stats->id - 1].head;
             thread_pings[my_idx].head = ping_job->next;
             if(thread_pings[my_idx].head == NULL){
-                thread_pings[my_idx].tail == NULL;
+                thread_pings[my_idx].tail = NULL;
             }
             thread_pings[my_idx].count--;
         pthread_mutex_unlock(&shared_queue.lock);

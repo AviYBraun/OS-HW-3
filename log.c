@@ -58,8 +58,8 @@ int get_log(server_log log, char** dst, time_stats* tm_stats) {
 
     reader_lock();
     //task 5 - if the debugging sleep is enabled, sleep
-    if(global_debug_sleep > 0){
-        usleep((Useconds_t)(global_debug_sleep_time * 1e6));
+    if(global_debug_sleep_time > 0){
+        usleep((useconds_t)(global_debug_sleep_time * 1e6));
     }
 
     int len = 1;
@@ -94,7 +94,7 @@ int get_log(server_log log, char** dst, time_stats* tm_stats) {
     *dst = result;
     reader_unlock();
     //return number of chars in the log - not including NULL termination
-    gettimeofday(&(tm_stats->log_exit), NULL)
+    gettimeofday(&(tm_stats->log_exit), NULL);
     return len - 1;
 
 }
@@ -119,7 +119,7 @@ void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_s
     newLog->next = NULL;
 
     //stat-log-arrival recorded before requesting lock
-    gettimeofday(&(tm_stats->log_enter_time), NULL);
+    gettimeofday(&(tm_stats->log_enter), NULL);
     // critical section of changing the shared log
     // pushing entry to end of the log
     writer_lock();
@@ -131,7 +131,7 @@ void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_s
         newLog->prev = NULL;
     }
     if(global_debug_sleep_time > 0){
-        usleep((usecodns_t)(global_debug_sleep_time * 1e6));
+        usleep((useconds_t)(global_debug_sleep_time * 1e6));
     }
     log->tail = newLog;
     writer_unlock();

@@ -1,6 +1,6 @@
 #ifndef SERVER_LOG_H
 #define SERVER_LOG_H
-
+#include <sys/time.h>
 // TODO:
 // Implement a thread-safe server log system.
 // - The log should support concurrent access from multiple threads.
@@ -9,6 +9,14 @@
 //   This means that if a writer is waiting, new readers should be blocked until the writer is done.
 // - Use appropriate synchronization primitives (e.g., pthread mutexes and condition variables).
 // - The log should allow appending entries and returning the full log content.
+
+
+typedef struct Time_stats {
+    struct timeval task_arrival;
+    struct timeval task_dispatch;
+    struct timeval log_enter;
+    struct timeval log_exit;
+} time_stats;
 
 typedef struct Server_Log* server_log;
 
@@ -24,6 +32,6 @@ void destroy_log(server_log log);
 int get_log(server_log log, char** dst, time_stats* tm_stats);
 
 // Appends a new entry to the log
-void add_to_log(server_log log, const char* data, int data_len, tiem_stats(tm_stats));
+void add_to_log(server_log log, const char* data, int data_len, time_stats *tm_stats);
 
 #endif // SERVER_LOG_H
