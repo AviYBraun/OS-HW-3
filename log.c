@@ -135,9 +135,8 @@ void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_s
         app_error("error: Bad Allocation");
     }
     memcpy(data_copy, job_data, job_len);
-
-    memcpy(data_copy, data, data_len);
-    data_copy[data_len] = '\0';
+    memcpy(data_copy + job_len, data, data_len);
+    data_copy[total_len] = '\0';
 
 
 
