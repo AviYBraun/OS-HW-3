@@ -65,7 +65,30 @@ void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, 
     *threads = atoi(argv[3]);
     *queue_size= atoi(argv[4]);
     *debug_sleep_time = atof(argv[5]);
+
+    if (*tcp_portnum <= 1024) {
+        fprintf(stderr, "Error: tcp_portnum must be above 1024.\n");
+        exit(1);
+    }
+    if (*udp_portnum <= 1024) {
+        fprintf(stderr, "Error: udp_portnum must be above 1024.\n");
+        exit(1);
+    }
+    if (*tcp_portnum == *udp_portnum) {
+        fprintf(stderr, "Error: udp_portnum must be different than tcp_portnum.\n");
+        exit(1);
+    }
+    if (*threads <= 0) {
+        fprintf(stderr, "Error: threads must be a positive integer.\n");
+        exit(1);
+    }
+    if (*queue_size <= 0) {
+        fprintf(stderr, "Error: queue_size must be a positive integer.\n");
+        exit(1);
+    }
+
     global_debug_sleep_time = *debug_sleep_time;
+    
     
 }
 
