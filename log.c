@@ -61,7 +61,8 @@ int get_log(server_log log, char** dst, time_stats* tm_stats) {
     if(global_debug_sleep_time > 0){
         usleep((useconds_t)(global_debug_sleep_time * 1e6));
     }
-
+    gettimeofday(&(tm_stats->log_exit), NULL);
+    
     int len = 1;
     struct LogNode *current = log->head;
 
@@ -94,7 +95,7 @@ int get_log(server_log log, char** dst, time_stats* tm_stats) {
     *dst = result;
     reader_unlock();
     //return number of chars in the log - not including NULL termination
-    gettimeofday(&(tm_stats->log_exit), NULL);
+    
     return len - 1;
 
 }
@@ -123,6 +124,13 @@ void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_s
     // critical section of changing the shared log
     // pushing entry to end of the log
     writer_lock();
+
+    if(global_debug_sleep_time > 0){
+        usleep((useconds_t)(global_debug_sleep_time * 1e6));
+    }
+    gettimeofday(&(tm_stats->log_exit), NULL);
+
+
     if(log->tail) {
         log->tail->next = newLog;
         newLog->prev = log->tail;
@@ -130,10 +138,8 @@ void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_s
         log->head = newLog;
         newLog->prev = NULL;
     }
-    if(global_debug_sleep_time > 0){
-        usleep((useconds_t)(global_debug_sleep_time * 1e6));
-    }
+    
     log->tail = newLog;
+
     writer_unlock();
-    gettimeofday(&(tm_stats->log_exit), NULL);
 }
