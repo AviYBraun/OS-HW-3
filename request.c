@@ -194,6 +194,7 @@ void requestHandle(int fd, time_stats tm_stats, threads_stats t_stats, server_lo
         char log_entry[MAXLINE] = "";
         // removed this: int entry_length = append_stats(log_entry, t_stats, tm_stats);
         //added below, and appended thread log in log.c
+        char thread_log[MAXLINE] = "";
         int thread_len = append_thread_log(thread_log, t_stats);
         add_to_log(log, log_entry, thread_len, &tm_stats);
         
