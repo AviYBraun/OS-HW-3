@@ -62,7 +62,7 @@ int get_log(server_log log, char** dst, time_stats* tm_stats) {
         usleep((useconds_t)(global_debug_sleep_time * 1e6));
     }
     gettimeofday(&(tm_stats->log_exit), NULL);
-    
+
     int len = 1;
     struct LogNode *current = log->head;
 
@@ -103,22 +103,6 @@ int get_log(server_log log, char** dst, time_stats* tm_stats) {
 // Appends a new entry to the log
 void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_stats) {
 
-    // creating logEntry
-    struct LogNode *newLog = malloc(sizeof(struct LogNode));
-    if (!newLog){
-        app_error("error: Bad Allocation");
-    }
-    char *data_copy = malloc(data_len + 1);
-    if (!data_copy){
-        app_error("error: Bad Allocation");
-    }
-
-    memcpy(data_copy, data, data_len);
-    data_copy[data_len] = '\0';
-    newLog->data = data_copy;
-    newLog->data_len = data_len;
-    newLog->next = NULL;
-
     //stat-log-arrival recorded before requesting lock
     gettimeofday(&(tm_stats->log_enter), NULL);
     // critical section of changing the shared log
@@ -129,6 +113,44 @@ void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_s
         usleep((useconds_t)(global_debug_sleep_time * 1e6));
     }
     gettimeofday(&(tm_stats->log_exit), NULL);
+
+    //just added:
+    char job_data[MAXLINE];
+    int job_len = sprintf(job_data,
+        "Stat-Req-Arrival:: %ld.%06ld\r\n"
+        "Stat-Req-Dispatch:: %ld.%06ld\r\n"
+        "Stat-Log-Arrival:: %ld.%06ld\r\n"
+        "Stat-Log-Dispatch:: %ld.%06ld\r\n",
+        tm_stats->task_arrival.tv_sec, tm_stats->task_arrival.tv_usec,
+        tm_stats->task_dispatch.tv_sec, tm_stats->task_dispatch.tv_usec,
+        tm_stats->log_enter.tv_sec, tm_stats->log_enter.tv_usec,
+        tm_stats->log_exit.tv_sec, tm_stats->log_exit.tv_usec);
+
+    
+
+    //just added:
+    int total_len = job_len + data_len;
+    char *data_copy = malloc(total_len + 1);
+    if (!data_copy){
+        app_error("error: Bad Allocation");
+    }
+    memcpy(data_copy, job_data, job_len);
+
+    memcpy(data_copy, data, data_len);
+    data_copy[data_len] = '\0';
+
+
+
+    // creating logEntry
+    struct LogNode *newLog = malloc(sizeof(struct LogNode));
+    if (!newLog){
+        app_error("error: Bad Allocation");
+    }
+
+    newLog->data = data_copy;
+    newLog->data_len = data_len;
+    newLog->next = NULL;
+
 
 
     if(log->tail) {

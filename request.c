@@ -192,8 +192,10 @@ void requestHandle(int fd, time_stats tm_stats, threads_stats t_stats, server_lo
 
         // GET is a writer: append an entry (thread + job stats) to the book.
         char log_entry[MAXLINE] = "";
-        int entry_length = append_stats(log_entry, t_stats, tm_stats);
-        add_to_log(log, log_entry, entry_length, &tm_stats);
+        // removed this: int entry_length = append_stats(log_entry, t_stats, tm_stats);
+        //added below, and appended thread log in log.c
+        int thread_len = append_thread_log(thread_log, t_stats);
+        add_to_log(log, log_entry, thread_len, &tm_stats);
         
     } else if (strcasecmp(method, "POST") == 0) {
         t_stats->post_req++;
