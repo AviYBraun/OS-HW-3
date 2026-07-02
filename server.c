@@ -56,7 +56,7 @@ server_log server_log_global;
 
 void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, float* debug_sleep_time, int argc, char *argv[])
 {
-    if (argc < 6) {
+    if (argc != 6) {
         fprintf(stderr, "Usage: %s <tcp_portnum> <udp_portnum> <threads> <queue_size> <debug_sleep_time>\n", argv[0]);
         exit(1);
     }
@@ -66,11 +66,11 @@ void getargs(int *tcp_portnum, int *udp_portnum, int* threads, int* queue_size, 
     *queue_size= atoi(argv[4]);
     *debug_sleep_time = atof(argv[5]);
 
-    if (*tcp_portnum <= 1024) {
+    if (*tcp_portnum <= 1024 || *tcp_portnum > 65535) {
         fprintf(stderr, "Error: tcp_portnum must be above 1024.\n");
         exit(1);
     }
-    if (*udp_portnum <= 1024) {
+    if (*udp_portnum <= 1024 || *udp_portnum > 65535) {
         fprintf(stderr, "Error: udp_portnum must be above 1024.\n");
         exit(1);
     }
@@ -153,6 +153,11 @@ int main(int argc, char *argv[])
     //need to figure out how to balance listening on both tcp and udp sockets
     listenfd = Open_listenfd(tcp_portnum); //listen for incoming tasks via TCP protocol
     udp_fd = UDP_Open(udp_portnum);
+    if (udp_fd < 0) {
+        fprintf(stderr, "Error: Failed to open UDP port.\n");
+        exit(1);
+    }
+
     pipe(notify_pipe);
     fcntl(notify_pipe[0], F_SETFL, O_NONBLOCK);
     fcntl(notify_pipe[1], F_SETFL, O_NONBLOCK);
