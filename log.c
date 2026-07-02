@@ -147,7 +147,7 @@ void add_to_log(server_log log, const char* data, int data_len, time_stats* tm_s
     }
 
     newLog->data = data_copy;
-    newLog->data_len = data_len;
+    newLog->data_len = total_len;
     newLog->next = NULL;
 
 
